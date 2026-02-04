@@ -1,4 +1,50 @@
-// Note created on 2026-02-04T07:53:17.328Z
-const noteContent = "const express = require('express');\nconst puppeteer = require('puppeteer');\nconst bodyParser = require('body-parser');\n\nconst app = express();\napp.use(bodyParser.text({ limit: '10mb' }));\n\napp.post('/pdf', async (req, res) => {\n  try {\n    const browser = await puppeteer.launch({\n      args: ['--no-sandbox', '--disable-setuid-sandbox']\n    });\n\n    const page = await browser.newPage();\n    await page.setContent(req.body, { waitUntil: 'networkidle0' });\n\n    const pdf = await page.pdf({\n      format: 'A4',\n      printBackground: true\n    });\n\n    await browser.close();\n\n    res.set({\n      'Content-Type': 'application/pdf',\n      'Content-Disposition': 'attachment; filename=output.pdf'\n    });\n\n    res.send(pdf);\n  } catch (e) {\n    res.status(500).send(e.toString());\n  }\n});\n\napp.listen(3000);\n";
+const express = require("express");
+const puppeteer = require("puppeteer");
 
-export default noteContent;
+const app = express();
+
+// 🔑 IMPORTANT: enable CORS
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
+app.use(express.text({ limit: "10mb" }));
+
+// Handle preflight request
+app.options("/pdf", (req, res) => {
+  res.sendStatus(200);
+});
+
+app.post("/pdf", async (req, res) => {
+  try {
+    const browser = await puppeteer.launch({
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+
+    const page = await browser.newPage();
+    await page.setContent(req.body, { waitUntil: "networkidle0" });
+
+    const pdf = await page.pdf({
+      format: "A4",
+      printBackground: true
+    });
+
+    await browser.close();
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=output.pdf"
+    );
+
+    res.send(pdf);
+  } catch (err) {
+    res.status(500).send(err.toString());
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT);
