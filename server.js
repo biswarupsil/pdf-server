@@ -3,7 +3,7 @@ const puppeteer = require("puppeteer");
 
 const app = express();
 
-// 🔑 IMPORTANT: enable CORS
+// Enable CORS
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -11,9 +11,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.text({ limit: "10mb" }));
+// 🔴 THIS LINE IS CRITICAL
+app.use(express.text({ type: "*/*", limit: "20mb" }));
 
-// Handle preflight request
+// Preflight
 app.options("/pdf", (req, res) => {
   res.sendStatus(200);
 });
@@ -35,11 +36,7 @@ app.post("/pdf", async (req, res) => {
     await browser.close();
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      "attachment; filename=output.pdf"
-    );
-
+    res.setHeader("Content-Disposition", "attachment; filename=output.pdf");
     res.send(pdf);
   } catch (err) {
     res.status(500).send(err.toString());
