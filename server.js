@@ -1,0 +1,4 @@
+// Note created on 2026-02-04T07:53:17.328Z
+const noteContent = "const express = require('express');\nconst puppeteer = require('puppeteer');\nconst bodyParser = require('body-parser');\n\nconst app = express();\napp.use(bodyParser.text({ limit: '10mb' }));\n\napp.post('/pdf', async (req, res) => {\n  try {\n    const browser = await puppeteer.launch({\n      args: ['--no-sandbox', '--disable-setuid-sandbox']\n    });\n\n    const page = await browser.newPage();\n    await page.setContent(req.body, { waitUntil: 'networkidle0' });\n\n    const pdf = await page.pdf({\n      format: 'A4',\n      printBackground: true\n    });\n\n    await browser.close();\n\n    res.set({\n      'Content-Type': 'application/pdf',\n      'Content-Disposition': 'attachment; filename=output.pdf'\n    });\n\n    res.send(pdf);\n  } catch (e) {\n    res.status(500).send(e.toString());\n  }\n});\n\napp.listen(3000);\n";
+
+export default noteContent;
