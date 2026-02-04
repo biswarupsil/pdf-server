@@ -4,18 +4,20 @@ const app = express();
 
 let browserPromise = null;
 
-// 1. Singleton Browser Strategy
-// We launch the browser once. If it crashes or closes, we relaunch it.
+// 1. Singleton Browser Strategy (Modified for Low Memory)
 async function getBrowser() {
     if (!browserPromise) {
-        console.log("Launching new browser instance...");
+        console.log("Launching browser...");
         browserPromise = puppeteer.launch({
             args: [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage", // distinct memory optimization for Docker
-                "--single-process" // vital for low-resource containers
+                "--disable-dev-shm-usage", // Docker memory fix
+                "--disable-gpu",           // Save GPU memory
+                "--no-zygote",             // Spawns fewer processes
+                "--single-process",        // Critical for low-resource containers
             ],
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null, // Use built-in Chrome if available
             headless: "new"
         });
     }
@@ -25,16 +27,17 @@ async function getBrowser() {
 // CORS
 app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS"); // Added GET
+    res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     next();
 });
 
 app.use(express.text({ type: "*/*", limit: "20mb" }));
 
-// 2. Health Check / Wake-up Endpoint
+// 2. Health Check - LIGHTWEIGHT
+// This endpoint MUST be fast. No database, no Puppeteer, just text.
 app.get("/ping", (req, res) => {
-    // Just receiving this request wakes up Render
+    console.log("Ping received. Server is awake.");
     res.status(200).send("Pong! Server is awake.");
 });
 
@@ -43,17 +46,20 @@ app.options("/pdf", (req, res) => res.sendStatus(200));
 app.post("/pdf", async (req, res) => {
     let page = null;
     try {
+        console.log("PDF Request: Getting browser...");
+        // WE LAUNCH BROWSER HERE, NOT ON STARTUP
         const browser = await getBrowser();
+        
+        console.log("Browser ready. Opening page...");
         page = await browser.newPage();
         
-        // Optimize page loading
         await page.setContent(req.body, { 
-            waitUntil: "domcontentloaded" // Faster than networkidle0
+            waitUntil: "domcontentloaded", // Faster than networkidle0
+            timeout: 60000 // 60s timeout for slow free tier
         });
 
         const pdf = await page.pdf({ format: "A4", printBackground: true });
         
-        // IMPORTANT: Close the page, but keep the browser open!
         await page.close(); 
         
         res.setHeader("Content-Type", "application/pdf");
@@ -61,15 +67,18 @@ app.post("/pdf", async (req, res) => {
         res.send(pdf);
     } catch (err) {
         console.error("PDF Error:", err);
-        // If the browser crashed, reset the promise so it restarts next time
-        if (page) await page.close().catch(() => {}); 
-        res.status(500).send(err.toString());
+        // If browser crashed, reset promise to force restart next time
+        if (browserPromise) {
+            const browser = await browserPromise;
+            await browser.close().catch(() => {});
+            browserPromise = null;
+        }
+        res.status(500).send("Error: " + err.toString());
     }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
-    // Pre-warm the browser on server start
-    getBrowser(); 
+    // DO NOT CALL getBrowser() HERE!
 });
